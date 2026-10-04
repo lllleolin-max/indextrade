@@ -44,7 +44,7 @@ any incumbent exists, leaving `INCOMPLETE.json` and no completion marker.
 存储、写入代价和每个查询的退化上限共同约束建议；穷举未完成时明确输出 UNKNOWN。
 SQL 建议需要应用团队审阅和部署，本工具不会自动修改原应用。
 
-Supported: Python 3.11+, ordinary SQLite tables and B-tree column indexes, bounded
+Supported: Python 3.11+ with SQLite 3.37+, ordinary SQLite tables and B-tree column indexes, bounded
 SELECT SQL with a small deterministic function allowlist, positional scalar
 parameters, and rolled-back INSERT/UPDATE/DELETE workloads. Views, triggers,
 virtual/generated columns, extensions, nondeterministic functions, distributed
@@ -57,7 +57,8 @@ SQLite's [query planner](https://sqlite.org/queryplanner.html) already chooses a
 plans; the experimental [SQLite Expert](https://sqlite.org/cli.html#index_recommendations_sqlite_expert)
 already recommends indexes. [HypoPG](https://hypopg.readthedocs.io/en/rel1_stable/hypothetical_indexes.html)
 and [CoPhy](https://arxiv.org/abs/1104.3214) establish mature hypothetical-index and
-constrained index-advisor work. IndexTrade does not invent index advising. Its narrow
+constrained index-advisor work. [pganalyze](https://pganalyze.com/docs/indexing-engine)
+already combines workload/index selection and write overhead. IndexTrade does not invent index advising. Its narrow
 pilot is actual local portfolio execution, semantic preservation, write/storage
 constraints and an explicit unfinished-search outcome. This is synthetic laboratory
 evidence; customers, revenue, willingness to pay and production savings are unknown.

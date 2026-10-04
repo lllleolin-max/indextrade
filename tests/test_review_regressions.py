@@ -31,19 +31,21 @@ class ReviewRegressions(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             source = root / "source.db"
+            fixture = [(1, 100), (2, 99)] + [(i, 0) for i in range(3, 103)]
             with closing(sqlite3.connect(source)) as db:
                 db.execute("CREATE TABLE events(id INTEGER PRIMARY KEY, kind INTEGER)")
-                db.executemany("INSERT INTO events VALUES(?,?)", [(1, 2), (2, 1)])
+                db.executemany("INSERT INTO events VALUES(?,?)", fixture)
                 db.commit()
-            sql = "DELETE FROM events WHERE id IN (SELECT id FROM events WHERE kind>0 LIMIT 1)"
+            sql = "DELETE FROM events WHERE id IN (SELECT id FROM events WHERE kind>98 LIMIT 1)"
             # Actual SQLite oracle: a new index changes which row LIMIT chooses.
             observed = []
             for indexed in (False, True):
                 with closing(sqlite3.connect(":memory:")) as db:
                     db.execute("CREATE TABLE events(id INTEGER PRIMARY KEY, kind INTEGER)")
-                    db.executemany("INSERT INTO events VALUES(?,?)", [(1, 2), (2, 1)])
+                    db.executemany("INSERT INTO events VALUES(?,?)", fixture)
                     if indexed:
                         db.execute("CREATE INDEX by_kind ON events(kind)")
+                    db.execute("ANALYZE")
                     db.execute(sql)
                     observed.append(db.execute("SELECT id FROM events").fetchall())
             self.assertNotEqual(observed[0], observed[1])

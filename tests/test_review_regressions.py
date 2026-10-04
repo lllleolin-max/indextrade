@@ -12,6 +12,25 @@ from indextrade.pilot import workload
 
 
 class ReviewRegressions(unittest.TestCase):
+    def test_without_rowid_literal_cannot_hide_real_rowid_write_changes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "source.db"
+            with closing(sqlite3.connect(source)) as db:
+                db.execute("CREATE TABLE events(kind INTEGER, label TEXT DEFAULT 'WITHOUT ROWID')")
+                db.executemany("INSERT INTO events(kind) VALUES(?)", [(100,), (99,)] + [(0,)] * 100)
+                db.commit()
+            spec = dict(version=1,
+                        queries=[dict(id="events", sql="SELECT kind,label FROM events", cases=[[]],
+                                      weight=1, ordered=False, max_regression=100)],
+                        writes=[dict(sql="UPDATE events SET rowid=rowid+1000 WHERE rowid IN "
+                                         "(SELECT rowid FROM events WHERE kind>98 LIMIT 1)", cases=[[]])],
+                        candidates=[dict(name="by_kind", table="events", columns=["kind"])],
+                        budgets=dict(max_index_bytes=100000, max_write_ratio=100),
+                        limits=dict(samples=1, warmup=0))
+            report = advise(source, spec, root / "output")
+            self.assertIn("write_answer_mismatch", report["portfolios"][1]["rejected_by"])
+
     def test_output_cannot_occupy_source_sidecar_namespace(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

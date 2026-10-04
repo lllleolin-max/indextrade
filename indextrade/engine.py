@@ -243,12 +243,12 @@ def used_pages(db):
 def application_state(db, limits):
     """Observe each actual write's logical effect, including accessible hidden rowids."""
     states = []
-    tables = db.execute("SELECT name,sql FROM sqlite_schema WHERE type='table' "
-                        "AND name NOT LIKE 'sqlite_%' ORDER BY name").fetchall()
-    for name, sql in tables:
+    tables = sorted((row[1], bool(row[4])) for row in db.execute("PRAGMA table_list")
+                    if row[0] == "main" and row[2] == "table" and not row[1].lower().startswith("sqlite_"))
+    for name, without_rowid in tables:
         columns = {col[1].casefold() for col in db.execute(f"PRAGMA table_xinfo({quote(name)})")}
         aliases = [alias for alias in ("rowid", "_rowid_", "oid") if alias not in columns]
-        projection = quote(aliases[0]) + ",*" if aliases and "WITHOUT ROWID" not in sql.upper() else "*"
+        projection = quote(aliases[0]) + ",*" if aliases and not without_rowid else "*"
         rows, _, _ = execute(db, f"SELECT {projection} FROM {quote(name)}", [], limits, count=False)
         states.append([name, answer(rows, False)])
     return digest(states)
@@ -386,6 +386,8 @@ def advise(source, workload, output):
     Input SQL may read application data. This is not an OS security sandbox.
     """
     validate_workload(workload)
+    if sqlite3.sqlite_version_info < (3, 37, 0):
+        raise IndexTradeError("SQLite 3.37+ is required for structural table metadata")
     limits = DEFAULTS | workload.get("limits", {})
     source_label = Path(source).absolute()
     source = source_label.resolve(strict=True)

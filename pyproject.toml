@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "indextrade"
+version = "0.1.0"
+description = "Measured, guarded SQLite index portfolios on disposable application snapshots"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = []
+
+[project.scripts]
+indextrade = "indextrade.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["indextrade*"]

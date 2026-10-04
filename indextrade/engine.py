@@ -10,6 +10,7 @@ import json
 import math
 from pathlib import Path
 import re
+import shutil
 import sqlite3
 import statistics
 import tempfile
@@ -338,13 +339,21 @@ def fingerprint(source):
 
 
 def snapshot(source, target):
-    # immutable=1 is only for the explicitly quiesced-source contract. It avoids
-    # SQLite changing source locks/SHM; backup handles SQLite pages rather than file copying.
-    with closing(sqlite3.connect(source.as_uri() + "?mode=ro&immutable=1", uri=True)) as src:
-        with closing(sqlite3.connect(target)) as dest:
-            src.backup(dest)
-            if dest.execute("PRAGMA integrity_check").fetchone() != ("ok",):
-                raise IndexTradeError("source snapshot failed integrity_check")
+    # Never open the user's source with SQLite: even a read-only WAL reader can
+    # touch SHM. Copy the quiesced database + WAL into a private directory, let
+    # SQLite recover that private WAL, then use backup for the logical snapshot.
+    # A single .db file copy (or immutable=1 open) can omit committed WAL rows.
+    with tempfile.TemporaryDirectory(prefix=".snapshot-", dir=Path(target).parent) as folder:
+        copied = Path(folder) / "copy.db"
+        shutil.copyfile(source, copied)
+        wal = Path(str(source) + "-wal")
+        if wal.exists():
+            shutil.copyfile(wal, Path(str(copied) + "-wal"))
+        with closing(sqlite3.connect(copied.as_uri() + "?mode=ro", uri=True)) as src:
+            with closing(sqlite3.connect(target)) as dest:
+                src.backup(dest)
+                if dest.execute("PRAGMA integrity_check").fetchone() != ("ok",):
+                    raise IndexTradeError("source snapshot failed integrity_check")
 
 
 def advise(source, workload, output):

@@ -387,8 +387,13 @@ def advise(source, workload, output):
     """
     validate_workload(workload)
     limits = DEFAULTS | workload.get("limits", {})
-    source = Path(source).resolve(strict=True)
+    source_label = Path(source).absolute()
+    source = source_label.resolve(strict=True)
     output = Path(output).resolve()
+    reserved = {str(Path(str(name) + suffix).resolve()).casefold()
+                for name in (source, source_label) for suffix in ("", "-wal", "-shm", "-journal")}
+    if str(output).casefold() in reserved:
+        raise IndexTradeError("output collides with the source database or its SQLite sidecar namespace")
     if not source.is_file() or output.exists():
         raise IndexTradeError("source must be a file and output must not already exist")
     if Path(str(source) + "-journal").exists():

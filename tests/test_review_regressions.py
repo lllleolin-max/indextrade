@@ -12,6 +12,31 @@ from indextrade.pilot import workload
 
 
 class ReviewRegressions(unittest.TestCase):
+    def test_output_cannot_occupy_source_sidecar_namespace(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "source.db"
+            with closing(sqlite3.connect(source)) as db:
+                db.execute("CREATE TABLE events(id INTEGER PRIMARY KEY)")
+                db.execute("INSERT INTO events VALUES(1)")
+                db.commit()
+            spec = dict(version=1,
+                        queries=[dict(id="events", sql="SELECT id FROM events", cases=[[]],
+                                      weight=1, ordered=False, max_regression=1)],
+                        writes=[dict(sql="INSERT INTO events VALUES(?)", cases=[[2]])],
+                        candidates=[], budgets=dict(max_index_bytes=0, max_write_ratio=1),
+                        limits=dict(samples=1, warmup=0))
+            for suffix in ("-wal", "-shm", "-journal"):
+                output = Path(str(source) + suffix)
+                with self.subTest(suffix=suffix):
+                    with self.assertRaises(IndexTradeError):
+                        advise(source, spec, output)
+                    self.assertFalse(output.exists())
+            with closing(sqlite3.connect(source)) as db:
+                db.execute("PRAGMA journal_mode=WAL")
+                db.execute("INSERT INTO events VALUES(2)")
+                db.commit()
+
     def test_huge_input_integer_is_a_controlled_domain_rejection(self):
         value = workload()
         value["limits"]["max_sets"] = 10**400

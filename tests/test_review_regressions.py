@@ -6,11 +6,17 @@ import sqlite3
 import tempfile
 import unittest
 
-from indextrade import advise
+from indextrade import IndexTradeError, advise, validate_workload
 from indextrade.engine import snapshot
+from indextrade.pilot import workload
 
 
 class ReviewRegressions(unittest.TestCase):
+    def test_huge_input_integer_is_a_controlled_domain_rejection(self):
+        value = workload()
+        value["limits"]["max_sets"] = 10**400
+        with self.assertRaises(IndexTradeError):
+            validate_workload(value)
     def test_committed_wal_rows_are_in_snapshot_without_source_edits(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

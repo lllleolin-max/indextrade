@@ -51,7 +51,7 @@ def fields(obj, required, optional=()):
 
 def number(value, name, lo, hi, *, integer=True):
     if (type(value) not in ((int,) if integer else (int, float))
-            or not math.isfinite(value) or not lo <= value <= hi):
+            or not lo <= value <= hi or not math.isfinite(value)):
         raise IndexTradeError(f"{name} must be {'an integer' if integer else 'finite'} in [{lo}, {hi}]")
     return value
 

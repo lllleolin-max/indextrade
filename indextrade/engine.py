@@ -240,8 +240,23 @@ def used_pages(db):
     return db.execute("PRAGMA page_count").fetchone()[0] - db.execute("PRAGMA freelist_count").fetchone()[0]
 
 
+def application_state(db, limits):
+    """Observe each actual write's logical effect, including accessible hidden rowids."""
+    states = []
+    tables = db.execute("SELECT name,sql FROM sqlite_schema WHERE type='table' "
+                        "AND name NOT LIKE 'sqlite_%' ORDER BY name").fetchall()
+    for name, sql in tables:
+        columns = {col[1].casefold() for col in db.execute(f"PRAGMA table_xinfo({quote(name)})")}
+        aliases = [alias for alias in ("rowid", "_rowid_", "oid") if alias not in columns]
+        projection = quote(aliases[0]) + ",*" if aliases and "WITHOUT ROWID" not in sql.upper() else "*"
+        rows, _, _ = execute(db, f"SELECT {projection} FROM {quote(name)}", [], limits, count=False)
+        states.append([name, answer(rows, False)])
+    return digest(states)
+
+
 def measure(path, workload, limits, indexes):
     with closing(sqlite3.connect(path, isolation_level=None)) as db:
+        db.execute("PRAGMA foreign_keys=ON")
         db.execute("PRAGMA temp_store=MEMORY")
         db.execute("PRAGMA automatic_index=ON")
         db.execute("PRAGMA cache_size=-2000")
@@ -286,18 +301,23 @@ def measure(path, workload, limits, indexes):
         db.execute("BEGIN")
         write_vm = 0
         changes = 0
+        write_results = []
         try:
             for write in workload["writes"]:
                 for params in write["cases"]:
                     _, steps, _ = execute(db, write["sql"], params, limits, write=True)
                     write_vm += steps
-                    changes += db.execute("SELECT changes()").fetchone()[0]
+                    changed = db.execute("SELECT changes()").fetchone()[0]
+                    changes += changed
+                    write_results.append(dict(changed_rows=changed,
+                                              after_state_sha256=application_state(db, limits)))
         finally:
             if db.in_transaction:
                 db.execute("ROLLBACK")
         return dict(indexes=[c["name"] for c in indexes], index_bytes=storage,
                     storage_method=method, queries=queries, write_vm_steps=write_vm,
                     write_changed_rows=changes,
+                    write_results=write_results,
                     weighted_read_vm=sum(q["vm_steps"] * spec["weight"]
                                          for q, spec in zip(queries, workload["queries"])))
 
@@ -308,6 +328,8 @@ def assess(result, baseline, workload):
         reasons.append("storage_budget")
     if result["write_vm_steps"] > baseline["write_vm_steps"] * workload["budgets"]["max_write_ratio"]:
         reasons.append("write_budget")
+    if result["write_results"] != baseline["write_results"]:
+        reasons.append("write_answer_mismatch")
     for query, old, spec in zip(result["queries"], baseline["queries"], workload["queries"]):
         if [c["answer_sha256"] for c in query["cases"]] != [c["answer_sha256"] for c in old["cases"]]:
             reasons.append("answer_mismatch:" + query["id"])
